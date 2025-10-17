@@ -1,0 +1,75 @@
+// ==UserScript==
+// @name         Auto click bonus points on Twitch.tv (robust)
+// @namespace    https://greasyfork.org/users/124677
+// @version      1.0.0
+// @description  Auto-clicks the channel points bonus chest under chat
+// @author       Pabli (+ hardening @jdietle)
+// @match        https://www.twitch.tv/*
+// @run-at       document-idle
+// @icon         data:image/png;base64,iVBORw0K... (truncated)
+// @grant        none
+// Original @downloadURL  https://update.greasyfork.org/scripts/392555/Auto%20click%20bonus%20points%20on%20Twitchtv.user.js
+// @updateURL    https://update.greasyfork.org/scripts/392555/Auto%20click%20bonus%20points%20on%20Twitchtv.meta.js
+// ==/UserScript==
+
+(function () {
+  'use strict';
+
+  // Multiple fallbacks — Twitch renames these periodically.
+  // Keep the most specific ones first.
+  const SELECTORS = [
+    'button[data-test-selector="channel-points-reward-center__claim-button"]',
+    'button[data-test-selector="community-points-summary"] [class*="claimable-bonus"]',
+    'button[aria-label*="Bonus"]',
+    '.community-points-summary button[aria-label*="bonus"]',
+    '.claimable-bonus__icon', // legacy
+  ].join(',');
+
+  const isVisible = (el) => {
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    return (
+      style.visibility !== 'hidden' &&
+      style.display !== 'none' &&
+      rect.width > 0 && rect.height > 0
+    );
+  };
+
+  let lastClick = 0;
+  const COOLDOWN_MS = 1500;
+
+  const tryClick = () => {
+    const btn = document.querySelector(SELECTORS);
+    if (!btn) return;
+    // Some buttons wrap the clickable element inside a container.
+    const clickable = btn.closest('button') || btn;
+    if (!clickable || clickable.disabled || !isVisible(clickable)) return;
+
+    const now = Date.now();
+    if (now - lastClick < COOLDOWN_MS) return;
+
+    clickable.click();
+    lastClick = now;
+    // console.debug('[Twitch Bonus] Clicked');
+  };
+
+  const start = () => {
+    tryClick(); // attempt once on load
+    const mo = new MutationObserver(() => tryClick());
+    mo.observe(document.documentElement || document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'style', 'disabled', 'aria-disabled']
+    });
+    // As a fallback (in case no mutations fire on some layouts)
+    setInterval(tryClick, 3000);
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start, { once: true });
+  } else {
+    start();
+  }
+})();
