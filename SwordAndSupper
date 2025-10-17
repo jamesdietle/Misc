@@ -1,0 +1,246 @@
+// ==UserScript==
+// @name         SwordAndSupper Conditional Autoplay (fixed)
+// @namespace    http://tampermonkey.net/
+// @version      0.0.4
+// @description  Auto-plays Sword & Supper maps with a start/cancel prompt, then loops missions automatically.
+// @author       u/Aizbaer (fixes by jdietle)
+// @match        https://*.devvit.net/index.html*
+// @require      https://code.jquery.com/jquery-3.6.0.min.js
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=reddit.com
+// @run-at       document-idle
+// @grant        none
+// ==/UserScript==
+
+(function () {
+  'use strict';
+
+  /** Dialog: returns Promise<boolean> */
+  function createConfirmDialog() {
+    // Backdrop
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 2147483647;
+    `;
+
+    // Dialog
+    const dialog = document.createElement('div');
+    dialog.style.cssText = `
+      width: min(520px, 90vw);
+      background: #1f1f1f; border-radius: 12px; padding: 24px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5); border: 1px solid #333;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    `;
+
+    // Title
+    const title = document.createElement('h2');
+    title.textContent = 'Supper Autoplay Script';
+    title.style.cssText = `margin:0 0 15px; font-size:22px; color:#e94560;`;
+
+    // Question
+    const question = document.createElement('p');
+    question.textContent = 'Start Autoplay script?';
+    question.style.cssText = `margin:0 0 12px; font-size:16px; color:#f5f5f5;`;
+
+    // Warning
+    const warning = document.createElement('p');
+    warning.textContent =
+      'The script will automatically click the first button on each screen and open a new map after finishing.';
+    warning.style.cssText = `margin:0 0 20px; font-size:14px; color:#ffa500; font-style:italic;`;
+
+    // Buttons
+    const buttons = document.createElement('div');
+    buttons.style.cssText = `display:flex; gap:16px; justify-content:center;`;
+
+    const yesButton = document.createElement('button');
+    yesButton.textContent = 'Start that map!';
+    yesButton.style.cssText = `
+      background: linear-gradient(135deg,#e94560,#f27121); color:#fff; border:0;
+      padding:12px 20px; border-radius:8px; cursor:pointer; font-size:16px; font-weight:600;
+      transition:.2s transform, .2s box-shadow; box-shadow:0 2px 10px rgba(233,69,96,.3);
+    `;
+    yesButton.onmouseenter = () => { yesButton.style.transform='translateY(-2px)'; };
+    yesButton.onmouseleave = () => { yesButton.style.transform=''; };
+
+    const noButton = document.createElement('button');
+    noButton.textContent = 'Wait, I have to crosspost this first';
+    noButton.style.cssText = `
+      background: linear-gradient(135deg,#6c757d,#495057); color:#fff; border:0;
+      padding:12px 20px; border-radius:8px; cursor:pointer; font-size:16px; font-weight:600;
+      transition:.2s transform, .2s box-shadow; box-shadow:0 2px 10px rgba(108,117,125,.3);
+    `;
+    noButton.onmouseenter = () => { noButton.style.transform='translateY(-2px)'; };
+    noButton.onmouseleave = () => { noButton.style.transform=''; };
+
+    buttons.append(yesButton, noButton);
+    dialog.append(title, question, warning, buttons);
+    overlay.append(dialog);
+
+    return new Promise((resolve) => {
+      const cleanup = (val) => {
+        document.removeEventListener('keydown', onKey);
+        overlay.remove();
+        resolve(val);
+      };
+      const onKey = (e) => { if (e.key === 'Escape') cleanup(false); };
+
+      yesButton.onclick = () => cleanup(true);
+      noButton.onclick = () => cleanup(false);
+      document.addEventListener('keydown', onKey);
+
+      document.body.appendChild(overlay);
+    });
+  }
+
+  /** Main autoplay sequence */
+  function executeAutoplayScript() {
+    // helper: tiny wait using setTimeout
+    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    function clickInventory() {
+      $(".navi-bar").find(".image-icon").last().trigger("click");
+      setTimeout(goToMapTab, 500);
+    }
+
+    function goToMapTab() {
+      const items = $(".nav").find(".nav-item");
+      if (items.length >= 4) {
+        $(items[3]).trigger("click");
+        setTimeout(clickFirstMap, 500);
+      }
+    }
+
+    function clickFirstMap() {
+      $(".equipment-bag").find(".equipment-slot").first().trigger("click");
+      setTimeout(useMap, 500);
+    }
+
+    function useMap() {
+      $(".item-modal-actions")
+        .find(".actions-button-row")
+        .find("button")
+        .last()
+        .trigger("click");
+      setTimeout(autoCompleteMap, 500);
+    }
+
+    function autoCompleteMap() {
+      $(".autocomplete-button").trigger("click");
+      setTimeout(clickSubmit, 500);
+    }
+
+    function clickSubmit() {
+      $(".mission-create-submit-button").trigger("click");
+      setTimeout(pickFood, 500);
+    }
+
+    function pickFood() {
+      $(".food-choice").first().trigger("click");
+      setTimeout(nameFood, 500);
+    }
+
+    function nameFood() {
+      $(".autocomplete-button").trigger("click");
+      setTimeout(clickSubmitAgain, 500);
+    }
+
+    function clickSubmitAgain() {
+      $(".mission-create-submit-button").trigger("click");
+      setTimeout(nameMission, 500);
+    }
+
+    function nameMission() {
+      const spans = $(".mission-create-summary").eq(1).find("span");
+      let stars = 0;
+      spans.each((idx, span) => {
+        if ($(span).text() === "★" && $(span).css("color") === "rgb(255, 215, 0)") {
+          stars++;
+        }
+      });
+
+      const levelString = $(".mission-create-summary")
+        .eq(2)
+        .find(".summary-text")
+        .text();
+      const levels = levelString.replace("Rec. Level: ", "").replace(" ~ ", "-");
+
+      const input = $("input").first();
+      const difficulty = stars ? stars + "★" : "BOSS RUSH";
+      const map = $(".mission-create-summary").eq(0).find(".summary-text").text();
+      const mapname = map.replace("Target: ", "");
+      const newTitle = `${levels} | ${difficulty} | ${mapname}`;
+
+      console.log("[Tampermonkey] Generated title:", newTitle);
+      const inputElement = input[0];
+      if (!inputElement) return;
+
+      // Focus and clear
+      inputElement.focus();
+      inputElement.select();
+      document.execCommand("delete");
+
+      // Properly set React-controlled input
+      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value"
+      ).set;
+      nativeInputValueSetter.call(inputElement, newTitle);
+
+      // Fire common events
+      ["input", "change", "keyup", "blur"].forEach((eventType) => {
+        const event = new Event(eventType, { bubbles: true });
+        inputElement.dispatchEvent(event);
+      });
+
+      console.log("[Tampermonkey] Value after change:", inputElement.value);
+    }
+
+    function myLoopFunction() {
+      // Mission end?
+      const end = $(".overlay-screen.mission-end-screen");
+      if (end.length) {
+        clearInterval(intervalId);
+        $(".continue-button").trigger("click");
+        $(".dismiss-button").trigger("click");
+        setTimeout(clickInventory, 500);
+        return;
+      }
+
+      // Progress/skill/advance buttons
+      const skillButton = $(".skill-button");
+      if (skillButton.length) skillButton.trigger("click");
+
+      const skipButton = $(".skip-button");
+      if (skipButton.length) skipButton.trigger("click");
+
+      const advance = $(".advance-button");
+      if (advance.length) advance.trigger("click");
+    }
+
+    // Kick off the loop and first sequence
+    const intervalId = setInterval(myLoopFunction, 1000);
+    console.log("Supper Autoplay Script has been started!");
+  }
+
+  async function main() {
+    // Wait for jQuery provided via @require
+    if (typeof window.$ === "undefined") {
+      setTimeout(main, 100);
+      return;
+    }
+    const userConfirmed = await createConfirmDialog();
+    if (userConfirmed) {
+      console.log("Autoplay Script is started...");
+      executeAutoplayScript();
+    } else {
+      console.log("Autoplay Script has been canceled by the user.");
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", main);
+  } else {
+    main();
+  }
+})();
